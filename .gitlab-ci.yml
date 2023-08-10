@@ -1,0 +1,72 @@
+variables:
+  REGISTRY: registry.fci.vn
+  GROUP: dmp
+  APPLICATION: agora-stream
+  COMPONENT: frontend
+  IMAGE_NAME: $REGISTRY/fptai-vision/$GROUP/$APPLICATION/$COMPONENT
+
+  GIT_OPS_REPO: https://$OPS_ACCESS_NAME:$OPS_ACCESS_TOKEN@gitlab.bcnfpt.com/vision-ops/reader-ops.git
+  OPS_REPO_PATH: reader-ops/$GROUP/$APPLICATION
+  GIT_OPS_USER_EMAIL: haidx7@fpt.com.vn
+  GIT_OPS_USER_NAME: ReaderCD
+
+stages:
+  - build
+  - deploy
+
+.build-frontend-template: &build-frontend
+  stage: build
+  tags:
+    - builder
+  before_script:
+    - docker login -u $HARBOR_USER -p $HARBOR_PASSWORD $REGISTRY
+  script:
+    - echo "RUNNING BUILD for commit" $CI_COMMIT_MESSAGE "with tag" $IMAGE_TAG
+    - export BUILD_DATE=$(date '+%d-%m-%Y')
+    - echo "BUID_DATE=$BUILD_DATE"
+    - DOCKER_BUILDKIT=1 docker build -t $IMAGE_NAME:$IMAGE_TAG -f $DOCKERFILE
+      --build-arg ARG_BRANCH=$BRANCH
+      --build-arg ARG_IMG_TAG=$IMAGE_TAG
+      --build-arg ARG_ENV=$ARG_ENV
+      --build-arg ARG_BUILD_DATE=$BUILD_DATE
+      .
+    - docker push $IMAGE_NAME:$IMAGE_TAG
+
+build-frontend-prod:
+  <<: *build-frontend
+  variables:
+    DOCKERFILE : Dockerfile
+    ARG_ENV: PRODUCTION
+    IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+  only:
+    - master
+
+.deploy-frontend-template: &deploy-frontend
+  stage: deploy
+  tags:
+    - reader-dev
+  image: alpine/git:v2.34.2
+  before_script:
+    - apk add yq --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community  # .yaml cli editor
+    - git clone $GIT_OPS_REPO
+    - git config --global user.email $GIT_OPS_USER_EMAIL
+    - git config --global user.name $GIT_OPS_USER_NAME
+  script:
+    - cd $OPS_REPO_PATH
+    - new_image=$IMAGE_NAME:$IMAGE_TAG yq -i eval '((strenv(UPDATING_CONFIG_PATH) | split(".") | .[]) as $i ireduce (. ; .[$i])) = env(new_image)' $HELM_VALUES_FILE
+    - git diff
+    - git add .
+    - git commit -m "Deploy agora-stream frontend with image $IMAGE_NAME:$IMAGE_TAG"
+    # for running jobs in parallel
+    # - sleep $(bc -l <<< $[(($RANDOM % 10) + 1)]/10)  # randomly delay up to 1s
+    - git pull --no-edit
+    - git push --repo $GIT_OPS_REPO
+
+deploy-frontend-prod:
+  <<: *deploy-frontend
+  variables:
+    IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+    UPDATING_CONFIG_PATH: frontend.image
+    HELM_VALUES_FILE: values.yaml
+  only:
+    - master
