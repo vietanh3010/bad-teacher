@@ -13,10 +13,10 @@ export default class Utils {
     };
 
     static mapRoleNameId = new Map([
-        [RoleEnum.Agent, 'agent'],
-        [RoleEnum.Auditor, 'auditor'],
-        [RoleEnum.Client, 'client'],
-        [RoleEnum.Contract, 'contract'],
+        [RoleEnum.Agent, 'teacher'],
+        [RoleEnum.Auditor, 'student'],
+        [RoleEnum.Client, 'student'],
+        [RoleEnum.Contract, 'student'],
     ])
 
     static getRoleName(roleEnum: RoleEnum) {
